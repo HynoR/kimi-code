@@ -1,6 +1,7 @@
 import type { ModelAlias } from '@moonshot-ai/kimi-code-sdk';
 import { describe, expect, it, vi } from 'vitest';
 
+import { CatalogModelMultiSelectComponent } from '#/tui/components/dialogs/catalog-model-multi-select';
 import { ChoicePickerComponent } from '#/tui/components/dialogs/choice-picker';
 import { EditorSelectorComponent } from '#/tui/components/dialogs/editor-selector';
 import { ModelSelectorComponent } from '#/tui/components/dialogs/model-selector';
@@ -376,5 +377,165 @@ describe('ModelSelectorComponent search and pagination', () => {
 
     selector.handleInput(PAGE_UP);
     expect(rendered(selector)).toContain('Page 1/3');
+  });
+});
+
+const SPACE = ' ';
+const TAB = String.fromCodePoint(9);
+const DOWN = `${ESC}[B`;
+const UP = `${ESC}[A`;
+
+describe('CatalogModelMultiSelectComponent', () => {
+  function buildModels(): Record<string, ModelAlias> {
+    return {
+      'prov/alpha': {
+        provider: 'prov',
+        model: 'alpha',
+        maxContextSize: 1000,
+        displayName: 'Alpha',
+        capabilities: ['thinking'],
+      },
+      'prov/beta': {
+        provider: 'prov',
+        model: 'beta',
+        maxContextSize: 1000,
+        displayName: 'Beta',
+        capabilities: ['thinking'],
+      },
+      'prov/gamma': {
+        provider: 'prov',
+        model: 'gamma',
+        maxContextSize: 1000,
+        displayName: 'Gamma',
+        capabilities: ['thinking'],
+      },
+    };
+  }
+
+  function makeSelector() {
+    const onSelect = vi.fn();
+    const onCancel = vi.fn();
+    const selector = new CatalogModelMultiSelectComponent({
+      models: buildModels(),
+      currentThinking: true,
+      colors: darkColors,
+      searchable: true,
+      onSelect,
+      onCancel,
+    });
+    return { selector, onSelect, onCancel };
+  }
+
+  it('filters the list as the user types and echoes the query', () => {
+    const { selector } = makeSelector();
+    for (const ch of 'gam') selector.handleInput(ch);
+    const out = rendered(selector);
+    expect(out).toContain('Search: gam');
+    expect(out).toContain('Gamma (prov)');
+    expect(out).not.toContain('Alpha (prov)');
+    expect(out).not.toContain('Beta (prov)');
+  });
+
+  it('keeps checked models when the search query changes', () => {
+    const { selector } = makeSelector();
+    selector.handleInput(SPACE); // check Alpha (highlighted)
+
+    for (const ch of 'beta') selector.handleInput(ch); // filter to Beta
+    selector.handleInput(SPACE); // check Beta
+
+    selector.handleInput(ESC); // clear the query, restore full list
+    const out = rendered(selector);
+    expect(out).toContain('[x] Alpha (prov)');
+    expect(out).toContain('[x] Beta (prov)');
+    expect(out).toContain('[ ] Gamma (prov)');
+  });
+
+  it('returns aliases in check order with the first checked as default', () => {
+    const { selector, onSelect } = makeSelector();
+    selector.handleInput(DOWN); // highlight Beta
+    selector.handleInput(SPACE); // check Beta first
+    selector.handleInput(UP); // highlight Alpha
+    selector.handleInput(SPACE); // check Alpha second
+    selector.handleInput(ENTER);
+
+    expect(onSelect).toHaveBeenCalledWith({
+      aliases: ['prov/beta', 'prov/alpha'],
+      defaultAlias: 'prov/beta',
+      thinking: true,
+    });
+  });
+
+  it('Enter does nothing when no model is checked', () => {
+    const { selector, onSelect, onCancel } = makeSelector();
+    selector.handleInput(DOWN); // highlight Beta but don't check it
+    selector.handleInput(ENTER);
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('shows an empty-state hint until a model is checked', () => {
+    const { selector } = makeSelector();
+    expect(rendered(selector)).toContain('Press Space to select at least one model');
+
+    selector.handleInput(SPACE); // check Alpha
+    expect(rendered(selector)).not.toContain('Press Space to select at least one model');
+  });
+
+  it('Tab promotes the highlighted model to default and checks it', () => {
+    const { selector, onSelect } = makeSelector();
+    selector.handleInput(DOWN); // highlight Beta
+    selector.handleInput(TAB); // promote Beta to default (auto-checks it)
+    selector.handleInput(ENTER);
+
+    expect(onSelect).toHaveBeenCalledWith({
+      aliases: ['prov/beta'],
+      defaultAlias: 'prov/beta',
+      thinking: true,
+    });
+  });
+
+  it('Tab overrides the first-checked default without reordering aliases', () => {
+    const { selector, onSelect } = makeSelector();
+    selector.handleInput(SPACE); // check Alpha first
+    selector.handleInput(DOWN); // highlight Beta
+    selector.handleInput(SPACE); // check Beta second
+    selector.handleInput(TAB); // promote Beta to default
+    selector.handleInput(ENTER);
+
+    expect(onSelect).toHaveBeenCalledWith({
+      aliases: ['prov/alpha', 'prov/beta'],
+      defaultAlias: 'prov/beta',
+      thinking: true,
+    });
+  });
+
+  it('moves the default arrow to the promoted model', () => {
+    const { selector } = makeSelector();
+    selector.handleInput(SPACE); // check Alpha
+    selector.handleInput(DOWN); // highlight Beta
+    selector.handleInput(TAB); // promote Beta to default
+    const out = rendered(selector)
+      .split('\n')
+      .filter((line) => line.includes('← default'));
+
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('Beta (prov)');
+  });
+
+  it('reverts to the first-checked default when the promoted model is unchecked', () => {
+    const { selector, onSelect } = makeSelector();
+    selector.handleInput(SPACE); // check Alpha first
+    selector.handleInput(DOWN); // highlight Beta
+    selector.handleInput(SPACE); // check Beta
+    selector.handleInput(TAB); // promote Beta to default
+    selector.handleInput(SPACE); // uncheck Beta, clearing the explicit default
+    selector.handleInput(ENTER);
+
+    expect(onSelect).toHaveBeenCalledWith({
+      aliases: ['prov/alpha'],
+      defaultAlias: 'prov/alpha',
+      thinking: true,
+    });
   });
 });

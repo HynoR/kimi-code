@@ -10,7 +10,10 @@ import {
 import type { ApprovalRequest, ApprovalResponse, Event } from '@moonshot-ai/kimi-code-sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { ApiKeyInputDialogComponent } from '#/tui/components/dialogs/api-key-input-dialog';
 import { ApprovalPanelComponent } from '#/tui/components/dialogs/approval-panel';
+import { CatalogModelMultiSelectComponent } from '#/tui/components/dialogs/catalog-model-multi-select';
+import { ChoicePickerComponent } from '#/tui/components/dialogs/choice-picker';
 import { ModelSelectorComponent } from '#/tui/components/dialogs/model-selector';
 import {
   PluginMcpSelectorComponent,
@@ -1718,6 +1721,103 @@ describe('KimiTUI message flow', () => {
     (picker as ModelSelectorComponent).handleInput('\u001B');
     (picker as ModelSelectorComponent).handleInput('\u001B');
     await expect(selection).resolves.toBeUndefined();
+  });
+
+  it('/connect writes only the models the user selected, default = first checked', async () => {
+    const catalog = {
+      acme: {
+        id: 'acme',
+        name: 'Acme',
+        api: 'https://api.acme.com/v1',
+        type: 'openai',
+        models: {
+          'acme-large': {
+            id: 'acme-large',
+            name: 'Acme Large',
+            limit: { context: 200000, output: 64000 },
+            reasoning: true,
+            tool_call: true,
+          },
+          'acme-mini': {
+            id: 'acme-mini',
+            name: 'Acme Mini',
+            limit: { context: 100000 },
+            tool_call: true,
+          },
+          'acme-nano': {
+            id: 'acme-nano',
+            name: 'Acme Nano',
+            limit: { context: 50000 },
+            tool_call: true,
+          },
+        },
+      },
+    };
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify(catalog), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    const originalFetch = global.fetch;
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const setConfig = vi.fn(async () => ({ providers: {} }));
+    const { driver } = await makeDriver(makeSession(), {
+      getConfig: vi.fn(async () => ({ providers: {}, models: {} })),
+      setConfig,
+    });
+
+    try {
+      driver.handleUserInput('/connect refresh');
+
+      // 1. Provider picker — one provider, select it.
+      await vi.waitFor(() => {
+        expect(driver.state.editorContainer.children[0]).toBeInstanceOf(ChoicePickerComponent);
+      });
+      (driver.state.editorContainer.children[0] as ChoicePickerComponent).handleInput('\r');
+
+      // 2. Model multi-select — check acme-mini then acme-nano, leave acme-large out.
+      await vi.waitFor(() => {
+        expect(driver.state.editorContainer.children[0]).toBeInstanceOf(
+          CatalogModelMultiSelectComponent,
+        );
+      });
+      const modelPicker = driver.state.editorContainer
+        .children[0] as CatalogModelMultiSelectComponent;
+      modelPicker.handleInput(`${ESC}[B`); // highlight acme-mini
+      modelPicker.handleInput(' '); // check acme-mini (becomes default)
+      modelPicker.handleInput(`${ESC}[B`); // highlight acme-nano
+      modelPicker.handleInput(' '); // check acme-nano
+      modelPicker.handleInput('\r');
+
+      // 3. API key dialog — type and submit.
+      await vi.waitFor(() => {
+        expect(driver.state.editorContainer.children[0]).toBeInstanceOf(ApiKeyInputDialogComponent);
+      });
+      const apiKeyDialog = driver.state.editorContainer.children[0] as ApiKeyInputDialogComponent;
+      for (const ch of 'sk-test') apiKeyDialog.handleInput(ch);
+      apiKeyDialog.handleInput('\r');
+
+      await vi.waitFor(() => {
+        expect(setConfig).toHaveBeenCalled();
+      });
+
+      const written = (setConfig.mock.calls[0] as unknown as [
+        {
+          providers: Record<string, { type?: string; apiKey?: string }>;
+          models: Record<string, unknown>;
+          defaultModel: string;
+        },
+      ])[0];
+      expect(Object.keys(written.models)).toEqual(['acme/acme-mini', 'acme/acme-nano']);
+      expect(written.models['acme/acme-large']).toBeUndefined();
+      expect(written.defaultModel).toBe('acme/acme-mini');
+      expect(written.providers['acme']).toMatchObject({ type: 'openai', apiKey: 'sk-test' });
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 
   it('deletes Kitty inline images when /new clears the transcript', async () => {

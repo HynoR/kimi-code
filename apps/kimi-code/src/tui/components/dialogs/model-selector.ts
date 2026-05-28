@@ -16,7 +16,7 @@ import type { ChoiceOption } from './choice-picker';
 
 type ThinkingAvailability = 'toggle' | 'always-on' | 'unsupported';
 
-interface ModelChoice {
+export interface ModelChoice {
   readonly alias: string;
   readonly model: ModelAlias;
   readonly label: string;
@@ -60,7 +60,7 @@ export interface ModelSelectorOptions {
   readonly onCancel: () => void;
 }
 
-function createModelChoices(models: Record<string, ModelAlias>): readonly ModelChoice[] {
+export function createModelChoices(models: Record<string, ModelAlias>): readonly ModelChoice[] {
   return Object.entries(models).map(([alias, cfg]) => ({
     alias,
     model: cfg,
@@ -68,14 +68,14 @@ function createModelChoices(models: Record<string, ModelAlias>): readonly ModelC
   }));
 }
 
-function thinkingAvailability(model: ModelAlias): ThinkingAvailability {
+export function thinkingAvailability(model: ModelAlias): ThinkingAvailability {
   const caps = model.capabilities ?? [];
   if (caps.includes('always_thinking')) return 'always-on';
   if (caps.includes('thinking')) return 'toggle';
   return 'unsupported';
 }
 
-function effectiveThinking(model: ModelAlias, thinkingDraft: boolean): boolean {
+export function effectiveThinking(model: ModelAlias, thinkingDraft: boolean): boolean {
   const availability = thinkingAvailability(model);
   if (availability === 'always-on') return true;
   if (availability === 'unsupported') return false;

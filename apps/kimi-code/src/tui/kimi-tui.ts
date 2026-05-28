@@ -150,6 +150,10 @@ import {
   type FeedbackInputDialogResult,
 } from './components/dialogs/feedback-input-dialog';
 import { HelpPanelComponent } from './components/dialogs/help-panel';
+import {
+  CatalogModelMultiSelectComponent,
+  type ModelMultiSelection,
+} from './components/dialogs/catalog-model-multi-select';
 import { ChoicePickerComponent, type ChoiceOption } from './components/dialogs/choice-picker';
 import { ModelSelectorComponent } from './components/dialogs/model-selector';
 import { PlatformSelectorComponent } from './components/dialogs/platform-selector';
@@ -6322,8 +6326,10 @@ export class KimiTUI {
       wire,
       baseUrl,
       apiKey,
-      models,
-      selectedModelId: selection.model.id,
+      // Only the user-selected models are written as aliases, not the full
+      // catalog list for this provider.
+      models: selection.models,
+      selectedModelId: selection.defaultModelId,
       thinking: selection.thinking,
     });
 
@@ -6335,8 +6341,8 @@ export class KimiTUI {
     });
 
     await this.refreshConfigAfterLogin();
-    this.track('connect', { provider: providerId, model: selection.model.id });
-    this.showStatus(`Connected: ${entry.name ?? providerId} · ${selection.model.id}`);
+    this.track('connect', { provider: providerId, model: selection.defaultModelId });
+    this.showStatus(`Connected: ${entry.name ?? providerId} · ${selection.defaultModelId}`);
   }
 
   // Handles the /feedback command — opens an inline input dialog and POSTs
@@ -6585,15 +6591,51 @@ export class KimiTUI {
   private async promptModelSelectionForCatalog(
     providerId: string,
     models: CatalogModel[],
-  ): Promise<{ model: CatalogModel; thinking: boolean } | undefined> {
+  ): Promise<{ models: CatalogModel[]; defaultModelId: string; thinking: boolean } | undefined> {
     const modelDict: Record<string, ModelAlias> = {};
     for (const m of models) {
       modelDict[`${providerId}/${m.id}`] = catalogModelToAlias(providerId, m);
     }
-    const selection = await this.runModelSelector(modelDict);
+    const selection = await this.runCatalogModelMultiSelect(modelDict);
     if (selection === undefined) return undefined;
-    const model = models.find((m) => `${providerId}/${m.id}` === selection.alias);
-    return model ? { model, thinking: selection.thinking } : undefined;
+
+    const byAlias = new Map(models.map((m) => [`${providerId}/${m.id}`, m]));
+    const selectedModels = selection.aliases
+      .map((alias) => byAlias.get(alias))
+      .filter((m): m is CatalogModel => m !== undefined);
+    const defaultModel = byAlias.get(selection.defaultAlias);
+    if (selectedModels.length === 0 || defaultModel === undefined) return undefined;
+
+    return {
+      models: selectedModels,
+      defaultModelId: defaultModel.id,
+      thinking: selection.thinking,
+    };
+  }
+
+  private runCatalogModelMultiSelect(
+    modelDict: Record<string, ModelAlias>,
+  ): Promise<ModelMultiSelection | undefined> {
+    return new Promise((resolve) => {
+      const firstAlias = Object.keys(modelDict)[0] ?? '';
+      const caps = modelDict[firstAlias]?.capabilities ?? [];
+      const initialThinking = caps.includes('always_thinking') || caps.includes('thinking');
+      const selector = new CatalogModelMultiSelectComponent({
+        models: modelDict,
+        currentThinking: initialThinking,
+        colors: this.state.theme.colors,
+        searchable: true,
+        onSelect: (selection) => {
+          this.restoreEditor();
+          resolve(selection);
+        },
+        onCancel: () => {
+          this.restoreEditor();
+          resolve(undefined);
+        },
+      });
+      this.mountEditorReplacement(selector);
+    });
   }
 
   private runModelSelector(
