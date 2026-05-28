@@ -6326,8 +6326,7 @@ export class KimiTUI {
     // cannot delete keys, and applyCatalogProvider's in-memory cleanup below
     // does not survive that merge — removeProvider is the only step that
     // actually drops old model aliases from disk.
-    const configBeforeRemoval = await this.harness.getConfig();
-    if (configBeforeRemoval.providers[providerId] !== undefined) {
+    if (existingConfig.providers[providerId] !== undefined) {
       await this.harness.removeProvider(providerId);
     }
 

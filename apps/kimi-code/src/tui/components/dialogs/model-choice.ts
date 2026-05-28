@@ -5,8 +5,10 @@
  */
 
 import type { ModelAlias } from '@moonshot-ai/kimi-code-sdk';
+import chalk from 'chalk';
 
 import { DEFAULT_OAUTH_PROVIDER_NAME, PRODUCT_NAME } from '#/constant/app';
+import type { ColorPalette } from '#/tui/theme/colors';
 
 export type ThinkingAvailability = 'toggle' | 'always-on' | 'unsupported';
 
@@ -46,4 +48,24 @@ export function effectiveThinking(model: ModelAlias, thinkingDraft: boolean): bo
   if (availability === 'always-on') return true;
   if (availability === 'unsupported') return false;
   return thinkingDraft;
+}
+
+export function renderThinkingControl(
+  model: ModelAlias,
+  thinkingDraft: boolean,
+  colors: ColorPalette,
+): string {
+  const segment = (label: string, active: boolean): string =>
+    active
+      ? chalk.hex(colors.primary).bold(`[ ${label} ]`)
+      : chalk.hex(colors.text)(`  ${label}  `);
+
+  const availability = thinkingAvailability(model);
+  if (availability === 'always-on') {
+    return `  ${segment('Always on', true)}`;
+  }
+  if (availability === 'unsupported') {
+    return `  ${segment('Off', true)} ${chalk.hex(colors.textMuted)('unsupported')}`;
+  }
+  return `  ${segment('On', thinkingDraft)}  ${segment('Off', !thinkingDraft)}`;
 }

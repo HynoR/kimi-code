@@ -14,6 +14,7 @@ import { SearchableList } from '#/tui/utils/searchable-list';
 import {
   createModelChoices,
   effectiveThinking,
+  renderThinkingControl,
   thinkingAvailability,
   type ModelChoice,
 } from './model-choice';
@@ -132,7 +133,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
     lines.push(chalk.hex(colors.textMuted)(' Thinking'));
     const selected = choices[view.selectedIndex];
     if (selected !== undefined) {
-      lines.push(this.renderThinkingControl(selected.model));
+      lines.push(renderThinkingControl(selected.model, this.thinkingDraft, colors));
     }
     lines.push('');
     if (view.page.pageCount > 1) {
@@ -144,22 +145,5 @@ export class ModelSelectorComponent extends Container implements Focusable {
     }
     lines.push(chalk.hex(colors.primary)('─'.repeat(width)));
     return lines.map((line) => truncateToWidth(line, width));
-  }
-
-  private renderThinkingControl(model: ModelAlias): string {
-    const { colors } = this.opts;
-    const segment = (label: string, active: boolean): string =>
-      active
-        ? chalk.hex(colors.primary).bold(`[ ${label} ]`)
-        : chalk.hex(colors.text)(`  ${label}  `);
-
-    const availability = thinkingAvailability(model);
-    if (availability === 'always-on') {
-      return `  ${segment('Always on', true)}`;
-    }
-    if (availability === 'unsupported') {
-      return `  ${segment('Off', true)} ${chalk.hex(colors.textMuted)('unsupported')}`;
-    }
-    return `  ${segment('On', this.thinkingDraft)}  ${segment('Off', !this.thinkingDraft)}`;
   }
 }
