@@ -11,12 +11,9 @@ import chalk from 'chalk';
 import type { ColorPalette } from '#/tui/theme/colors';
 import { SearchableList } from '#/tui/utils/searchable-list';
 
-import type { ChoiceOption } from './choice-picker';
 import {
   createModelChoices,
   effectiveThinking,
-  modelDisplayName,
-  providerDisplayName,
   thinkingAvailability,
   type ModelChoice,
 } from './model-choice';
@@ -24,15 +21,6 @@ import {
 export interface ModelSelection {
   readonly alias: string;
   readonly thinking: boolean;
-}
-
-export function createModelChoiceOptions(
-  models: Record<string, ModelAlias>,
-): readonly ChoiceOption[] {
-  return Object.entries(models).map(([alias, cfg]) => ({
-    value: alias,
-    label: `${modelDisplayName(alias, cfg)} (${providerDisplayName(cfg.provider)})`,
-  }));
 }
 
 export interface ModelSelectorOptions {

@@ -69,7 +69,7 @@ export class CatalogModelMultiSelectComponent extends Container implements Focus
     if (opts.defaultAlias !== undefined && this.checked.has(opts.defaultAlias)) {
       this.explicitDefault = opts.defaultAlias;
     }
-    const initialAlias = this.explicitDefault ?? this.checked.values().next().value;
+    const initialAlias = this.defaultAlias();
     const initialIndex =
       initialAlias !== undefined
         ? choices.findIndex((choice) => choice.alias === initialAlias)
