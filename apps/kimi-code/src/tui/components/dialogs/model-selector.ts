@@ -8,33 +8,22 @@ import {
 } from '@earendil-works/pi-tui';
 import chalk from 'chalk';
 
-import { DEFAULT_OAUTH_PROVIDER_NAME, PRODUCT_NAME } from '#/constant/app';
 import type { ColorPalette } from '#/tui/theme/colors';
 import { SearchableList } from '#/tui/utils/searchable-list';
 
 import type { ChoiceOption } from './choice-picker';
-
-type ThinkingAvailability = 'toggle' | 'always-on' | 'unsupported';
-
-export interface ModelChoice {
-  readonly alias: string;
-  readonly model: ModelAlias;
-  readonly label: string;
-}
+import {
+  createModelChoices,
+  effectiveThinking,
+  modelDisplayName,
+  providerDisplayName,
+  thinkingAvailability,
+  type ModelChoice,
+} from './model-choice';
 
 export interface ModelSelection {
   readonly alias: string;
   readonly thinking: boolean;
-}
-
-export function modelDisplayName(alias: string, model: ModelAlias | undefined): string {
-  return model?.displayName ?? model?.model ?? alias;
-}
-
-export function providerDisplayName(provider: string): string {
-  if (provider === DEFAULT_OAUTH_PROVIDER_NAME) return PRODUCT_NAME;
-  if (provider.startsWith('managed:')) return provider.slice('managed:'.length);
-  return provider;
 }
 
 export function createModelChoiceOptions(
@@ -58,28 +47,6 @@ export interface ModelSelectorOptions {
   readonly pageSize?: number;
   readonly onSelect: (selection: ModelSelection) => void;
   readonly onCancel: () => void;
-}
-
-export function createModelChoices(models: Record<string, ModelAlias>): readonly ModelChoice[] {
-  return Object.entries(models).map(([alias, cfg]) => ({
-    alias,
-    model: cfg,
-    label: `${modelDisplayName(alias, cfg)} (${providerDisplayName(cfg.provider)})`,
-  }));
-}
-
-export function thinkingAvailability(model: ModelAlias): ThinkingAvailability {
-  const caps = model.capabilities ?? [];
-  if (caps.includes('always_thinking')) return 'always-on';
-  if (caps.includes('thinking')) return 'toggle';
-  return 'unsupported';
-}
-
-export function effectiveThinking(model: ModelAlias, thinkingDraft: boolean): boolean {
-  const availability = thinkingAvailability(model);
-  if (availability === 'always-on') return true;
-  if (availability === 'unsupported') return false;
-  return thinkingDraft;
 }
 
 export class ModelSelectorComponent extends Container implements Focusable {

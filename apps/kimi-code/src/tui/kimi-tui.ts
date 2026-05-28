@@ -254,7 +254,11 @@ import {
 import { formatBackgroundAgentTranscript } from './utils/background-agent-status';
 import { formatBackgroundTaskTranscript } from './utils/background-task-status';
 import { hasDispose, isExpandable, isPlanExpandable } from './utils/component-capabilities';
-import { resolveConnectCatalogRequest } from './utils/connect-catalog';
+import {
+  catalogModelSelectionInitialState,
+  resolveConnectCatalogRequest,
+  type CatalogModelSelectionInitialState,
+} from './utils/connect-catalog';
 import { isDeadTerminalError } from './utils/dead-terminal';
 import {
   appendStreamingArgsPreview,
@@ -6596,7 +6600,9 @@ export class KimiTUI {
     for (const m of models) {
       modelDict[`${providerId}/${m.id}`] = catalogModelToAlias(providerId, m);
     }
-    const selection = await this.runCatalogModelMultiSelect(modelDict);
+    const config = await this.harness.getConfig({ reload: true });
+    const initialSelection = catalogModelSelectionInitialState(providerId, models, config);
+    const selection = await this.runCatalogModelMultiSelect(modelDict, initialSelection);
     if (selection === undefined) return undefined;
 
     const byAlias = new Map(models.map((m) => [`${providerId}/${m.id}`, m]));
@@ -6615,14 +6621,18 @@ export class KimiTUI {
 
   private runCatalogModelMultiSelect(
     modelDict: Record<string, ModelAlias>,
+    initialSelection: CatalogModelSelectionInitialState,
   ): Promise<ModelMultiSelection | undefined> {
     return new Promise((resolve) => {
-      const firstAlias = Object.keys(modelDict)[0] ?? '';
-      const caps = modelDict[firstAlias]?.capabilities ?? [];
-      const initialThinking = caps.includes('always_thinking') || caps.includes('thinking');
+      // No prior config → start with thinking on; effectiveThinking() in the
+      // component clamps it to false at submit time for unsupported models, so
+      // we don't need to peek at any specific model's capabilities here.
+      const initialThinking = initialSelection.thinking ?? true;
       const selector = new CatalogModelMultiSelectComponent({
         models: modelDict,
         currentThinking: initialThinking,
+        selectedAliases: initialSelection.selectedAliases,
+        defaultAlias: initialSelection.defaultAlias,
         colors: this.state.theme.colors,
         searchable: true,
         onSelect: (selection) => {

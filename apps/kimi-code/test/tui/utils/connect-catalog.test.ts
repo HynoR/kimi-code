@@ -2,11 +2,19 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { DEFAULT_CATALOG_URL, loadBuiltInCatalog } from '@moonshot-ai/kimi-code-sdk';
+import {
+  DEFAULT_CATALOG_URL,
+  loadBuiltInCatalog,
+  type CatalogModel,
+  type KimiConfig,
+} from '@moonshot-ai/kimi-code-sdk';
 import { describe, expect, it } from 'vitest';
 
 import { BUILT_IN_CATALOG_JSON } from '#/built-in-catalog';
-import { resolveConnectCatalogRequest } from '#/tui/utils/connect-catalog';
+import {
+  catalogModelSelectionInitialState,
+  resolveConnectCatalogRequest,
+} from '#/tui/utils/connect-catalog';
 
 import { builtInCatalogDefine } from '../../../scripts/built-in-catalog.mjs';
 
@@ -103,6 +111,100 @@ describe('resolveConnectCatalogRequest', () => {
       kind: 'error',
       message: 'Only one catalog URL can be provided. Got "https://a.com/x.json" and "https://b.com/y.json".',
     });
+  });
+});
+
+describe('catalogModelSelectionInitialState', () => {
+  function model(id: string): CatalogModel {
+    return { id, capability: { id, contextWindow: 1000 } } as unknown as CatalogModel;
+  }
+
+  function config(over: Partial<KimiConfig>): KimiConfig {
+    return { providers: {}, ...over } as KimiConfig;
+  }
+
+  const models = [model('large'), model('mini'), model('nano')];
+
+  it('returns empty state when no config models match the provider', () => {
+    expect(
+      catalogModelSelectionInitialState(
+        'acme',
+        models,
+        config({
+          models: { 'other/x': { provider: 'other', model: 'x', maxContextSize: 1 } },
+        }),
+      ),
+    ).toEqual({ selectedAliases: [], defaultAlias: undefined, thinking: undefined });
+  });
+
+  it('preselects every alias the config wires to this provider, in config order', () => {
+    const result = catalogModelSelectionInitialState(
+      'acme',
+      models,
+      config({
+        models: {
+          'acme/nano': { provider: 'acme', model: 'nano', maxContextSize: 1 },
+          'acme/large': { provider: 'acme', model: 'large', maxContextSize: 1 },
+        },
+      }),
+    );
+
+    expect(result.selectedAliases).toEqual(['acme/nano', 'acme/large']);
+    expect(result.defaultAlias).toBeUndefined();
+    expect(result.thinking).toBeUndefined();
+  });
+
+  it('drops config entries whose model is no longer in the catalog', () => {
+    const result = catalogModelSelectionInitialState(
+      'acme',
+      models,
+      config({
+        models: {
+          'acme/mini': { provider: 'acme', model: 'mini', maxContextSize: 1 },
+          'acme/legacy': { provider: 'acme', model: 'legacy', maxContextSize: 1 },
+        },
+      }),
+    );
+
+    expect(result.selectedAliases).toEqual(['acme/mini']);
+  });
+
+  it('promotes defaultModel to defaultAlias and carries defaultThinking', () => {
+    const result = catalogModelSelectionInitialState(
+      'acme',
+      models,
+      config({
+        models: {
+          'acme/mini': { provider: 'acme', model: 'mini', maxContextSize: 1 },
+          'acme/large': { provider: 'acme', model: 'large', maxContextSize: 1 },
+        },
+        defaultModel: 'acme/large',
+        defaultThinking: true,
+      }),
+    );
+
+    expect(result.defaultAlias).toBe('acme/large');
+    expect(result.thinking).toBe(true);
+  });
+
+  it('ignores defaultModel that belongs to another provider', () => {
+    const result = catalogModelSelectionInitialState(
+      'acme',
+      models,
+      config({
+        models: {
+          'acme/mini': { provider: 'acme', model: 'mini', maxContextSize: 1 },
+          'other/x': { provider: 'other', model: 'x', maxContextSize: 1 },
+        },
+        defaultModel: 'other/x',
+        defaultThinking: true,
+      }),
+    );
+
+    expect(result.selectedAliases).toEqual(['acme/mini']);
+    expect(result.defaultAlias).toBeUndefined();
+    // No default for this provider → don't carry thinking either.
+    expect(result.thinking).toBeUndefined();
   });
 });
 

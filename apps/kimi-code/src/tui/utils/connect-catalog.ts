@@ -1,4 +1,4 @@
-import { DEFAULT_CATALOG_URL } from '@moonshot-ai/kimi-code-sdk';
+import { DEFAULT_CATALOG_URL, type CatalogModel, type KimiConfig } from '@moonshot-ai/kimi-code-sdk';
 
 const BARE_HTTP_URL_RE = /^https?:\/\/\S+$/;
 
@@ -78,5 +78,49 @@ export function resolveConnectCatalogRequest(args: string): ConnectCatalogResolu
       preferBuiltIn: !refreshRequested,
       allowBuiltInFallback: true,
     },
+  };
+}
+
+export interface CatalogModelSelectionInitialState {
+  readonly selectedAliases: readonly string[];
+  readonly defaultAlias?: string;
+  readonly thinking?: boolean;
+}
+
+/**
+ * Project the current config into the initial state for the /connect
+ * multi-select picker: which catalog aliases are already configured for this
+ * provider, which (if any) is the default, and whether the saved default has
+ * thinking on. Aliases that no longer exist in the catalog are dropped.
+ */
+export function catalogModelSelectionInitialState(
+  providerId: string,
+  models: readonly CatalogModel[],
+  config: KimiConfig,
+): CatalogModelSelectionInitialState {
+  const aliasByModelId = new Map(models.map((model) => [model.id, `${providerId}/${model.id}`]));
+  const selectedAliases: string[] = [];
+  const seen = new Set<string>();
+  for (const model of Object.values(config.models ?? {})) {
+    if (model.provider !== providerId) continue;
+    const alias = aliasByModelId.get(model.model);
+    if (alias !== undefined && !seen.has(alias)) {
+      selectedAliases.push(alias);
+      seen.add(alias);
+    }
+  }
+
+  let defaultAlias: string | undefined;
+  const defaultModel =
+    config.defaultModel !== undefined ? config.models?.[config.defaultModel] : undefined;
+  if (defaultModel?.provider === providerId) {
+    const alias = aliasByModelId.get(defaultModel.model);
+    if (alias !== undefined && seen.has(alias)) defaultAlias = alias;
+  }
+
+  return {
+    selectedAliases,
+    defaultAlias,
+    thinking: defaultAlias !== undefined ? config.defaultThinking : undefined,
   };
 }

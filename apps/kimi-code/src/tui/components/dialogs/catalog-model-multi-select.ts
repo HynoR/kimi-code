@@ -1,7 +1,7 @@
 /**
  * Multi-select model picker used by /connect. Sibling to ModelSelectorComponent
  * (single-select, /model). Reuses SearchableList for cursor/search/paging and
- * the model-domain helpers from model-selector.
+ * the shared model-domain helpers in ./model-choice.
  */
 
 import type { ModelAlias } from '@moonshot-ai/kimi-code-sdk';
@@ -23,7 +23,7 @@ import {
   effectiveThinking,
   thinkingAvailability,
   type ModelChoice,
-} from './model-selector';
+} from './model-choice';
 
 export interface ModelMultiSelection {
   /** Checked model aliases, in the order the user checked them. */
@@ -36,6 +36,8 @@ export interface CatalogModelMultiSelectOptions {
   readonly models: Record<string, ModelAlias>;
   readonly currentThinking: boolean;
   readonly colors: ColorPalette;
+  readonly selectedAliases?: readonly string[];
+  readonly defaultAlias?: string;
   /** When true, typed characters filter the list (fuzzy) and a search line is shown. */
   readonly searchable?: boolean;
   /** Items per page. Lists longer than this paginate (PgUp/PgDn). */
@@ -60,10 +62,23 @@ export class CatalogModelMultiSelectComponent extends Container implements Focus
     super();
     this.opts = opts;
     const choices = createModelChoices(opts.models);
+    const availableAliases = new Set(choices.map((choice) => choice.alias));
+    for (const alias of opts.selectedAliases ?? []) {
+      if (availableAliases.has(alias)) this.checked.add(alias);
+    }
+    if (opts.defaultAlias !== undefined && this.checked.has(opts.defaultAlias)) {
+      this.explicitDefault = opts.defaultAlias;
+    }
+    const initialAlias = this.explicitDefault ?? this.checked.values().next().value;
+    const initialIndex =
+      initialAlias !== undefined
+        ? choices.findIndex((choice) => choice.alias === initialAlias)
+        : -1;
     this.list = new SearchableList({
       items: choices,
       toSearchText: (c) => c.label,
       pageSize: opts.pageSize,
+      initialIndex: initialIndex >= 0 ? initialIndex : undefined,
       searchable: opts.searchable === true,
     });
     this.thinkingDraft = opts.currentThinking;
