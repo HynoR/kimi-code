@@ -1797,6 +1797,12 @@ describe('KimiTUI message flow', () => {
         expect(driver.state.editorContainer.children[0]).toBeInstanceOf(ApiKeyInputDialogComponent);
       });
       const apiKeyDialog = driver.state.editorContainer.children[0] as ApiKeyInputDialogComponent;
+      apiKeyDialog.handleInput('\r');
+      expect(stripSgr(apiKeyDialog.render(120).join('\n'))).toContain(
+        'API key cannot be empty.',
+      );
+      expect(setConfig).not.toHaveBeenCalled();
+
       for (const ch of 'sk-test') apiKeyDialog.handleInput(ch);
       apiKeyDialog.handleInput('\r');
 
@@ -2032,6 +2038,84 @@ describe('KimiTUI message flow', () => {
       expect(beaconIdx).toBeGreaterThan(-1);
       expect(acmeIdx).toBeLessThan(zenithIdx); // configured group: alphabetical
       expect(zenithIdx).toBeLessThan(beaconIdx); // configured group precedes unconfigured
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('/connect keeps an existing provider apiKey when submitted empty', async () => {
+    const catalog = {
+      acme: {
+        id: 'acme',
+        name: 'Acme',
+        api: 'https://api.acme.com/v1',
+        type: 'openai',
+        models: {
+          'acme-mini': {
+            id: 'acme-mini',
+            name: 'Acme Mini',
+            limit: { context: 100000 },
+            tool_call: true,
+          },
+        },
+      },
+    };
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify(catalog), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    const originalFetch = global.fetch;
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const getConfig = vi.fn(async () => ({
+      providers: { acme: { type: 'openai', apiKey: 'old-key' } },
+      models: {
+        'acme/acme-mini': { provider: 'acme', model: 'acme-mini', maxContextSize: 100000 },
+      },
+      defaultModel: 'acme/acme-mini',
+      defaultThinking: false,
+    }));
+    const removeProvider = vi.fn(async () => ({ providers: {}, models: {} }));
+    const setConfig = vi.fn(async () => ({ providers: {} }));
+    const { driver } = await makeDriver(makeSession(), {
+      getConfig,
+      removeProvider,
+      setConfig,
+    });
+
+    try {
+      driver.handleUserInput('/connect refresh');
+
+      await vi.waitFor(() => {
+        expect(driver.state.editorContainer.children[0]).toBeInstanceOf(ChoicePickerComponent);
+      });
+      (driver.state.editorContainer.children[0] as ChoicePickerComponent).handleInput('\r');
+
+      await vi.waitFor(() => {
+        expect(driver.state.editorContainer.children[0]).toBeInstanceOf(
+          CatalogModelMultiSelectComponent,
+        );
+      });
+      (driver.state.editorContainer.children[0] as CatalogModelMultiSelectComponent).handleInput(
+        '\r',
+      );
+
+      await vi.waitFor(() => {
+        expect(driver.state.editorContainer.children[0]).toBeInstanceOf(ApiKeyInputDialogComponent);
+      });
+      (driver.state.editorContainer.children[0] as ApiKeyInputDialogComponent).handleInput('\r');
+
+      await vi.waitFor(() => {
+        expect(setConfig).toHaveBeenCalled();
+      });
+
+      const written = (setConfig.mock.calls[0] as unknown as [
+        { providers: Record<string, { apiKey?: string }> },
+      ])[0];
+      expect(written.providers['acme']?.apiKey).toBe('old-key');
     } finally {
       global.fetch = originalFetch;
     }

@@ -69,6 +69,7 @@ import type {
   ErrorEvent,
   Event,
   HookResultEvent,
+  KimiConfig,
   KimiHarness,
   ModelAlias,
   McpServerInfo,
@@ -141,6 +142,7 @@ import {
 } from './components/dialogs/approval-panel';
 import {
   ApiKeyInputDialogComponent,
+  type ApiKeyInputDialogOptions,
   type ApiKeyInputResult,
 } from './components/dialogs/api-key-input-dialog';
 import { CompactionComponent } from './components/dialogs/compaction';
@@ -256,6 +258,7 @@ import { formatBackgroundTaskTranscript } from './utils/background-task-status';
 import { hasDispose, isExpandable, isPlanExpandable } from './utils/component-capabilities';
 import {
   catalogModelSelectionInitialState,
+  catalogProviderExistingApiKey,
   configuredProviderModelCounts,
   resolveConnectCatalogRequest,
   type CatalogModelSelectionInitialState,
@@ -6306,10 +6309,13 @@ export class KimiTUI {
       return;
     }
 
-    const selection = await this.promptModelSelectionForCatalog(providerId, models);
+    const existingConfig = await this.harness.getConfig({ reload: true });
+    const selection = await this.promptModelSelectionForCatalog(providerId, models, existingConfig);
     if (selection === undefined) return;
 
-    const apiKey = await this.promptApiKey(entry.name ?? providerId);
+    const apiKey = await this.promptApiKey(entry.name ?? providerId, {
+      existingApiKey: catalogProviderExistingApiKey(providerId, existingConfig),
+    });
     if (apiKey === undefined) return;
 
     const wire = inferWireType(entry);
@@ -6320,8 +6326,8 @@ export class KimiTUI {
     // cannot delete keys, and applyCatalogProvider's in-memory cleanup below
     // does not survive that merge — removeProvider is the only step that
     // actually drops old model aliases from disk.
-    const existingConfig = await this.harness.getConfig();
-    if (existingConfig.providers[providerId] !== undefined) {
+    const configBeforeRemoval = await this.harness.getConfig();
+    if (configBeforeRemoval.providers[providerId] !== undefined) {
       await this.harness.removeProvider(providerId);
     }
 
@@ -6574,7 +6580,10 @@ export class KimiTUI {
     });
   }
 
-  private promptApiKey(platformName: string): Promise<string | undefined> {
+  private promptApiKey(
+    platformName: string,
+    options: ApiKeyInputDialogOptions = {},
+  ): Promise<string | undefined> {
     return new Promise((resolve) => {
       const dialog = new ApiKeyInputDialogComponent(
         platformName,
@@ -6583,6 +6592,7 @@ export class KimiTUI {
           resolve(result.kind === 'ok' ? result.value : undefined);
         },
         this.state.theme.colors,
+        options,
       );
       this.mountEditorReplacement(dialog);
     });
@@ -6611,12 +6621,12 @@ export class KimiTUI {
   private async promptModelSelectionForCatalog(
     providerId: string,
     models: CatalogModel[],
+    config: KimiConfig,
   ): Promise<{ models: CatalogModel[]; defaultModelId: string; thinking: boolean } | undefined> {
     const modelDict: Record<string, ModelAlias> = {};
     for (const m of models) {
       modelDict[`${providerId}/${m.id}`] = catalogModelToAlias(providerId, m);
     }
-    const config = await this.harness.getConfig({ reload: true });
     const initialSelection = catalogModelSelectionInitialState(providerId, models, config);
     const selection = await this.runCatalogModelMultiSelect(modelDict, initialSelection);
     if (selection === undefined) return undefined;

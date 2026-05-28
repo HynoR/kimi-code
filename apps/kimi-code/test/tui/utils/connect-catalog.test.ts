@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BUILT_IN_CATALOG_JSON } from '#/built-in-catalog';
 import {
+  catalogProviderExistingApiKey,
   catalogModelSelectionInitialState,
   configuredProviderModelCounts,
   resolveConnectCatalogRequest,
@@ -206,6 +207,36 @@ describe('catalogModelSelectionInitialState', () => {
     expect(result.defaultAlias).toBeUndefined();
     // No default for this provider → don't carry thinking either.
     expect(result.thinking).toBeUndefined();
+  });
+});
+
+describe('catalogProviderExistingApiKey', () => {
+  function config(over: Partial<KimiConfig>): KimiConfig {
+    return { providers: {}, ...over } as KimiConfig;
+  }
+
+  it('returns a trimmed existing provider apiKey', () => {
+    expect(
+      catalogProviderExistingApiKey(
+        'acme',
+        config({ providers: { acme: { type: 'openai', apiKey: ' sk-existing ' } } }),
+      ),
+    ).toBe('sk-existing');
+  });
+
+  it('ignores missing and empty provider apiKey values', () => {
+    expect(
+      catalogProviderExistingApiKey(
+        'acme',
+        config({ providers: { acme: { type: 'openai', apiKey: '   ' } } }),
+      ),
+    ).toBeUndefined();
+    expect(
+      catalogProviderExistingApiKey(
+        'acme',
+        config({ providers: { other: { type: 'openai', apiKey: 'sk-other' } } }),
+      ),
+    ).toBeUndefined();
   });
 });
 

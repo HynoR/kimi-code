@@ -87,6 +87,14 @@ export interface CatalogModelSelectionInitialState {
   readonly thinking?: boolean;
 }
 
+export function catalogProviderExistingApiKey(
+  providerId: string,
+  config: KimiConfig,
+): string | undefined {
+  const apiKey = config.providers[providerId]?.apiKey?.trim();
+  return apiKey !== undefined && apiKey.length > 0 ? apiKey : undefined;
+}
+
 /**
  * Project the current config into the initial state for the /connect
  * multi-select picker: which catalog aliases are already configured for this
