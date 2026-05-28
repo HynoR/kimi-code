@@ -124,3 +124,18 @@ export function catalogModelSelectionInitialState(
     thinking: defaultAlias !== undefined ? config.defaultThinking : undefined,
   };
 }
+
+/**
+ * Map providerId → number of models wired up to that provider in `config`.
+ * Only providers that also have a `[providers.<id>]` entry are included, so
+ * orphan model aliases (whose provider block was hand-deleted) don't get
+ * badged as configured in the picker.
+ */
+export function configuredProviderModelCounts(config: KimiConfig): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const model of Object.values(config.models ?? {})) {
+    if (config.providers[model.provider] === undefined) continue;
+    counts.set(model.provider, (counts.get(model.provider) ?? 0) + 1);
+  }
+  return counts;
+}

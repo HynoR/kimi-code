@@ -1933,6 +1933,110 @@ describe('KimiTUI message flow', () => {
     }
   });
 
+  it('/connect marks already-configured providers and floats them to the top', async () => {
+    const catalog = {
+      acme: {
+        id: 'acme',
+        name: 'Acme',
+        api: 'https://api.acme.com/v1',
+        type: 'openai',
+        models: {
+          'acme-large': {
+            id: 'acme-large',
+            name: 'Acme Large',
+            limit: { context: 200000 },
+            tool_call: true,
+          },
+          'acme-mini': {
+            id: 'acme-mini',
+            name: 'Acme Mini',
+            limit: { context: 100000 },
+            tool_call: true,
+          },
+        },
+      },
+      beacon: {
+        id: 'beacon',
+        name: 'Beacon',
+        api: 'https://api.beacon.com/v1',
+        type: 'openai',
+        models: {
+          'beacon-pro': {
+            id: 'beacon-pro',
+            name: 'Beacon Pro',
+            limit: { context: 100000 },
+            tool_call: true,
+          },
+        },
+      },
+      zenith: {
+        id: 'zenith',
+        name: 'Zenith',
+        api: 'https://api.zenith.com/v1',
+        type: 'openai',
+        models: {
+          'zenith-1': {
+            id: 'zenith-1',
+            name: 'Zenith One',
+            limit: { context: 50000 },
+            tool_call: true,
+          },
+        },
+      },
+    };
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify(catalog), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    const originalFetch = global.fetch;
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    // Two configured providers (zenith with 1 model, acme with 2) and one
+    // unconfigured (beacon). Configured ones should float to the top with
+    // accurate counts; unconfigured ones stay in alphabetical order below.
+    const getConfig = vi.fn(async () => ({
+      providers: {
+        acme: { type: 'openai', apiKey: 'a' },
+        zenith: { type: 'openai', apiKey: 'z' },
+      },
+      models: {
+        'acme/acme-large': { provider: 'acme', model: 'acme-large', maxContextSize: 200000 },
+        'acme/acme-mini': { provider: 'acme', model: 'acme-mini', maxContextSize: 100000 },
+        'zenith/zenith-1': { provider: 'zenith', model: 'zenith-1', maxContextSize: 50000 },
+      },
+    }));
+    const { driver } = await makeDriver(makeSession(), { getConfig });
+
+    try {
+      driver.handleUserInput('/connect refresh');
+
+      await vi.waitFor(() => {
+        expect(driver.state.editorContainer.children[0]).toBeInstanceOf(ChoicePickerComponent);
+      });
+      const picker = driver.state.editorContainer.children[0] as ChoicePickerComponent;
+      const out = stripSgr(picker.render(120).join('\n'));
+
+      expect(out).toContain('Acme ← configured · 2 models');
+      expect(out).toContain('Zenith ← configured · 1 model');
+      expect(out).toContain('Beacon');
+      expect(out).not.toContain('Beacon ← configured');
+
+      const acmeIdx = out.indexOf('Acme ');
+      const zenithIdx = out.indexOf('Zenith ');
+      const beaconIdx = out.indexOf('Beacon');
+      expect(acmeIdx).toBeGreaterThan(-1);
+      expect(zenithIdx).toBeGreaterThan(-1);
+      expect(beaconIdx).toBeGreaterThan(-1);
+      expect(acmeIdx).toBeLessThan(zenithIdx); // configured group: alphabetical
+      expect(zenithIdx).toBeLessThan(beaconIdx); // configured group precedes unconfigured
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('deletes Kitty inline images when /new clears the transcript', async () => {
     setCapabilities({ images: 'kitty', trueColor: true, hyperlinks: true });
     const { driver, harness } = await makeDriver(makeSession({ id: 'ses-1' }));

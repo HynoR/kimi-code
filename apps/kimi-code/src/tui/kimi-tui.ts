@@ -256,6 +256,7 @@ import { formatBackgroundTaskTranscript } from './utils/background-task-status';
 import { hasDispose, isExpandable, isPlanExpandable } from './utils/component-capabilities';
 import {
   catalogModelSelectionInitialState,
+  configuredProviderModelCounts,
   resolveConnectCatalogRequest,
   type CatalogModelSelectionInitialState,
 } from './utils/connect-catalog';
@@ -6522,24 +6523,39 @@ export class KimiTUI {
     });
   }
 
-  private promptCatalogProviderSelection(catalog: Catalog): Promise<string | undefined> {
-    return new Promise((resolve) => {
-      const options: ChoiceOption[] = Object.entries(catalog)
-        .filter(([, entry]) => inferWireType(entry) !== undefined)
-        .map(([id, entry]) => ({
+  private async promptCatalogProviderSelection(catalog: Catalog): Promise<string | undefined> {
+    const config = await this.harness.getConfig();
+    const counts = configuredProviderModelCounts(config);
+    const formatBadge = (count: number): string =>
+      `← configured · ${String(count)} model${count === 1 ? '' : 's'}`;
+
+    const options: ChoiceOption[] = Object.entries(catalog)
+      .filter(([, entry]) => inferWireType(entry) !== undefined)
+      .map(([id, entry]) => {
+        const count = counts.get(id);
+        return {
           value: id,
           label: entry.name ?? id,
           description:
             typeof entry.api === 'string' && entry.api.length > 0 ? entry.api : undefined,
-        }))
-        .toSorted((a, b) => a.label.localeCompare(b.label));
+          badge: count !== undefined ? formatBadge(count) : undefined,
+        };
+      })
+      .toSorted((a, b) => {
+        // Configured providers float to the top so the user can scan their
+        // existing connections at a glance; alphabetical within each group.
+        const aConfigured = a.badge !== undefined;
+        const bConfigured = b.badge !== undefined;
+        if (aConfigured !== bConfigured) return aConfigured ? -1 : 1;
+        return a.label.localeCompare(b.label);
+      });
 
-      if (options.length === 0) {
-        this.showError('Catalog has no providers with supported wire types.');
-        resolve(undefined);
-        return;
-      }
+    if (options.length === 0) {
+      this.showError('Catalog has no providers with supported wire types.');
+      return undefined;
+    }
 
+    return new Promise((resolve) => {
       const picker = new ChoicePickerComponent({
         title: 'Select a provider',
         options,

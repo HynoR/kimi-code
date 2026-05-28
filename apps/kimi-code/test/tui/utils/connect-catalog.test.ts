@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { BUILT_IN_CATALOG_JSON } from '#/built-in-catalog';
 import {
   catalogModelSelectionInitialState,
+  configuredProviderModelCounts,
   resolveConnectCatalogRequest,
 } from '#/tui/utils/connect-catalog';
 
@@ -205,6 +206,57 @@ describe('catalogModelSelectionInitialState', () => {
     expect(result.defaultAlias).toBeUndefined();
     // No default for this provider → don't carry thinking either.
     expect(result.thinking).toBeUndefined();
+  });
+});
+
+describe('configuredProviderModelCounts', () => {
+  function config(over: Partial<KimiConfig>): KimiConfig {
+    return { providers: {}, ...over } as KimiConfig;
+  }
+
+  it('returns an empty map for an empty config', () => {
+    expect(configuredProviderModelCounts(config({}))).toEqual(new Map());
+  });
+
+  it('excludes providers that have an entry but no models wired up', () => {
+    const counts = configuredProviderModelCounts(
+      config({
+        providers: { acme: { type: 'openai', apiKey: 'k' } },
+        models: {},
+      }),
+    );
+    expect(counts.size).toBe(0);
+  });
+
+  it('excludes orphan models whose provider block was hand-deleted', () => {
+    const counts = configuredProviderModelCounts(
+      config({
+        providers: {},
+        models: { 'ghost/mini': { provider: 'ghost', model: 'mini', maxContextSize: 1 } },
+      }),
+    );
+    expect(counts.size).toBe(0);
+  });
+
+  it('counts models per provider, only when the provider block also exists', () => {
+    const counts = configuredProviderModelCounts(
+      config({
+        providers: {
+          acme: { type: 'openai', apiKey: 'a' },
+          openai: { type: 'openai', apiKey: 'b' },
+        },
+        models: {
+          'acme/large': { provider: 'acme', model: 'large', maxContextSize: 1 },
+          'acme/mini': { provider: 'acme', model: 'mini', maxContextSize: 1 },
+          'openai/gpt': { provider: 'openai', model: 'gpt', maxContextSize: 1 },
+          'ghost/x': { provider: 'ghost', model: 'x', maxContextSize: 1 },
+        },
+      }),
+    );
+    expect(counts.get('acme')).toBe(2);
+    expect(counts.get('openai')).toBe(1);
+    expect(counts.has('ghost')).toBe(false);
+    expect(counts.size).toBe(2);
   });
 });
 
